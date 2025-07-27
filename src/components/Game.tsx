@@ -1,35 +1,40 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { CameraControls, Plane, Preload, SoftShadows, useGLTF } from "@react-three/drei";
-import { forwardRef, Suspense, useEffect, useRef, useState } from "react";
+import { CameraControls, Line, Plane, Preload, useGLTF } from "@react-three/drei";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Environment } from "./Environment";
 import GameBoard from "@meshes/GameBoard";
-import Hole, { Handle as HoleHandle, useHandle as useHole } from "@meshes/Hole";
+import Hole, { useHandle as useHole } from "@meshes/Hole";
 import { Raycast } from "@utils/Raycast";
-import { InstancedRigidBodies, InstancedRigidBodyProps, Physics, RapierRigidBody, RigidBody } from "@react-three/rapier";
+import { InstancedRigidBodies, InstancedRigidBodyProps, Physics, RapierRigidBody, RigidBody, useRapier } from "@react-three/rapier";
 import { Perf } from "r3f-perf";
 import useM_Shell from "@materials/M_Shell";
 import { assetPath } from "@utils/Config";
-import { Group, InstancedMesh, MathUtils, Mesh } from "three";
+import { CubicBezierCurve3, CurvePath, Group, LineCurve3, MathUtils, Mesh, Vector3 as Vec3 } from "three";
+import { ImpulseJoint, Vector3 } from "@dimforge/rapier3d-compat";
 import useM_Hole from "@materials/M_Hole";
 import { useStore } from "@utils/useStore";
 import { easings } from "react-spring";
+import CameraControlsImpl from "camera-controls";
+
+export type Action = "select" | "confirm" | "move" | "speak";
 
 export function Game() {
     return (<>
         <Canvas shadows flat gl={{ antialias: true }} dpr={[1, 1.5]}
-            camera={{ position: [0.01, 0.6, -0.2], fov: 50, near: 0.01, far: 10 }}
+            camera={{ position: [0, 0.6, 0], fov: 50, near: 0.01, far: 10 }}
             style={{ position: "fixed", width: `100%`, height: `100%`, left: "0px", top: "0px", pointerEvents: "initial" }}
         >
             <OptimizeShaders />
             <Suspense fallback={null}>
-                <SoftShadows size={10} samples={20} />
+                <Initialization />
+                {/* <SoftShadows size={10} samples={20} /> */}
                 <Environment />
                 <Physics gravity={[0, -9.81, 0]}>
                     <Models />
                 </Physics>
-                <CameraControls />
                 {process.env.NODE_ENV === "development" && <Perf position="bottom-left" deepAnalyze overClock />}
             </Suspense>
+            <Controls />
             <Preload all />
         </Canvas>
     </>);
@@ -41,11 +46,49 @@ function OptimizeShaders() {
     return null;
 }
 
+function Initialization() {
+    const store = useStore();
+    useEffect(() => {
+        if (store.scene === "Game") {
+            store.action = "select";
+            store.initialized = false;
+            store.player = Math.round(Math.random());
+            store.selectedHole = null;
+            store.shells = null;
+            store.word = null;
+        }
+    }, [store.scene, store]);
+    return null;
+}
+
+function Controls() {
+    const store = useStore();
+    const controls = useRef<CameraControlsImpl>(null);
+
+    useEffect(() => {
+        if (!controls.current) return;
+        if (store.scene === "Game") {
+            controls.current.setLookAt(0.01, 0.6, -0.2, 0, 0, 0, true);
+        } else {
+            controls.current.setLookAt(0.1, 0.3, -0.5, 0, 0, 0.2, true);
+        }
+    }, [store.scene]);
+
+    return (
+        <CameraControls ref={controls} />
+    );
+}
+
 const PLAYER_COUNT = 2;
+const BOARD_HEIGHT = 0.035;
 const HOLE_COUNT = 7;
 const SHELLS_PER_HOLE = 7;
 const SHELL_COUNT = PLAYER_COUNT * HOLE_COUNT * SHELLS_PER_HOLE;
+const SHELL_SIZE = 0.011015;
 const HOLE_SIZE = 0.07;
+const HOLE_HEIGHT = 0.05;
+const STORE_INDEX = HOLE_COUNT;
+const STORE_SIZE = 0.08;
 
 const decomposeIndex = (index: number) => {
     const player = Math.floor(index / HOLE_COUNT / SHELLS_PER_HOLE);
@@ -54,19 +97,65 @@ const decomposeIndex = (index: number) => {
     return { player, hole, shell };
 }
 
-const getPosition = (index: number): [x: number, y: number, z: number] => {
-    const { player, hole, shell } = decomposeIndex(index);
-    const x = (hole * HOLE_SIZE - HOLE_SIZE * (HOLE_COUNT - 1) * 0.5) * (player === 0 ? 1 : -1);
-    const y = 0;
-    const z = player * HOLE_SIZE - HOLE_SIZE * (PLAYER_COUNT - 1) * 0.5;
-    return [x, y, z];
+const getNextHole = (playingPlayer: number, player: number, hole: number): [player: number, hole: number] => {
+    ++hole;
+    if (
+        // If this player is playing, include the player's store
+        (playingPlayer === player && hole > HOLE_COUNT) ||
+        // Otherwise, skip the store (we never drop a shell in opponent's store)
+        (playingPlayer !== player && hole >= HOLE_COUNT)
+    ) {
+        ++player;
+        player %= PLAYER_COUNT;
+        hole = 0;
+    }
+    return [player, hole];
+}
+
+const computeHolePosition = (holeKey: HoleKey): Vec3 => {
+    const { player, hole } = holeKey;
+    const pos = new Vec3();
+    pos.x = (hole * HOLE_SIZE - HOLE_SIZE * (HOLE_COUNT - 1) * 0.5) * (player === 0 ? -1 : 1);
+    pos.y = BOARD_HEIGHT - HOLE_HEIGHT * 0.5;
+    pos.z = player * HOLE_SIZE - HOLE_SIZE * (PLAYER_COUNT - 1) * 0.5;
+    // Store is centered
+    if (hole === STORE_INDEX) pos.z = 0;
+    return pos;
+}
+
+const holeKeys: HoleKey[] = [];
+for (let player = 0; player < PLAYER_COUNT; ++player) {
+    for (let hole = 0; hole < HOLE_COUNT; ++hole) {
+        holeKeys.push({ player, hole });
+    }
+    // Store
+    holeKeys.push({ player, hole: STORE_INDEX });
+}
+
+const getHoleKey = (player: number, hole: number) => {
+    return holeKeys[player * (HOLE_COUNT + 1) + hole];
+}
+
+const holePositions = new Map<HoleKey, Vec3>();
+for (let player = 0; player < PLAYER_COUNT; ++player) {
+    for (let hole = 0; hole < HOLE_COUNT; ++hole) {
+        const key = getHoleKey(player, hole);
+        holePositions.set(key, computeHolePosition(key));
+    }
+    // Store
+    const store = getHoleKey(player, STORE_INDEX);
+    holePositions.set(store, computeHolePosition(store));
+}
+
+const getHolePosition = (player: number, hole: number) => {
+    return holePositions.get(getHoleKey(player, hole))!;
 }
 
 const createShell = (index: number): InstancedRigidBodyProps => {
     const { player, hole, shell } = decomposeIndex(index);
     const key = `${player}-${hole}-${shell}`;
-    const position = getPosition(index);
-    position[1] += 0.03 + shell * 0.005;
+    const position = getHolePosition(player, hole).clone();
+    position.y += HOLE_HEIGHT * 0.5 + SHELL_SIZE * shell;
     return ({ key, position });
 };
 
@@ -74,49 +163,288 @@ export type HoleKey = {
     player: number;
     hole: number;
 }
-type HoleValue = HoleHandle | null;
+
+function Board() {
+    return (
+        <>
+            <RigidBody colliders="trimesh" type="fixed">
+                <GameBoard raycast={Raycast.Disabled} castShadow receiveShadow />
+            </RigidBody>
+            <RigidBody colliders="cuboid" type="fixed" position={[0, 0.001, 0]}>
+                <Plane args={[10, 10, 1, 1]} rotation-x={-Math.PI * 0.5}>
+                    <meshBasicMaterial colorWrite={false} depthWrite={false} />
+                </Plane>
+            </RigidBody>
+        </>
+    );
+}
 
 function Models() {
+    return (<>
+        <Board />
+        <Hand animationTime={1} waitingTime={0.2} />
+        <Shells />
+        <Holes />
+    </>);
+}
+
+function Shells() {
     const store = useStore();
 
-    const ref = useRef<InstancedMesh>(null);
-    const api = useRef<RapierRigidBody[]>([]);
+    const bodies = useRef<RapierRigidBody[]>([]);
 
     const shell = useGLTF(assetPath("/meshes/Shell.glb"));
     const geom = (shell.nodes[Object.keys(shell.nodes)[1]] as Mesh).geometry;
     const M_Shell = useM_Shell();
 
-    const shells = Array.from({ length: SHELL_COUNT }).map((_, index) => createShell(index));
+    const shells = useMemo(() => Array.from({ length: SHELL_COUNT }).map((_, index) => createShell(index)), []);
 
-    return (<>
-        <RigidBody colliders="trimesh" type="fixed">
-            <GameBoard raycast={Raycast.Disabled} castShadow receiveShadow />
-        </RigidBody>
-        <RigidBody colliders="cuboid" type="fixed" position={[0, 0.001, 0]}>
-            <Plane args={[10, 10, 1, 1]} rotation-x={-Math.PI * 0.5}>
-                <meshBasicMaterial colorWrite={false} depthWrite={false} />
-            </Plane>
-        </RigidBody>
-        <InstancedRigidBodies instances={shells} ref={api} colliders="ball" gravityScale={0.1} mass={0.01} friction={0.001}>
-            <instancedMesh ref={ref} castShadow receiveShadow args={[geom, undefined, SHELL_COUNT]}
-                count={SHELL_COUNT}>
-                <primitive attach="material" object={M_Shell} />
-            </instancedMesh>
+    const getHoleShells = useCallback((player: number, hole: number) => {
+        const holePosition = getHolePosition(player, hole);
+        const size = hole === STORE_INDEX ? STORE_SIZE : HOLE_SIZE;
+        // Get all shells that are in the hole bounds
+        const selected: RapierRigidBody[] = [];
+        for (const shell of bodies.current) {
+            const position = shell.translation();
+            if (position.x > holePosition.x - size * 0.5 &&
+                position.x < holePosition.x + size * 0.5 &&
+                position.z > holePosition.z - size * 0.5 &&
+                position.z < holePosition.z + size * 0.5
+            ) {
+                selected.push(shell);
+            }
+        }
+        return selected;
+    }, []);
+
+    useEffect(() => {
+        if (!store.selectedHole) return;
+        const { player, hole } = store.selectedHole;
+        const shells = getHoleShells(player, hole);
+        store.shells = shells;
+        console.log(shells);
+    }, [store.selectedHole, getHoleShells, store]);
+
+    const [, update] = useState({});
+    useEffect(() => {
+        if (!store.initialized) {
+            store.initialized = true;
+            update({});
+        }
+    }, [store.initialized, store, update])
+
+    return (
+        <InstancedRigidBodies instances={shells} ref={bodies} colliders="ball" gravityScale={0.1} mass={0.01} friction={0.001} linearDamping={0.85} angularDamping={0.95}>
+            <instancedMesh castShadow receiveShadow
+                args={[geom, undefined, SHELL_COUNT]}
+                raycast={Raycast.Disabled}
+                count={SHELL_COUNT}
+                material={M_Shell}
+            />
         </InstancedRigidBodies>
-        {Array.from({ length: PLAYER_COUNT }).flatMap((_, player) => (
-            Array.from({ length: HOLE_COUNT }).map((_, hole) => {
-                return <IndicatedHole key={`${player}-${hole}`} player={player} hole={hole} />
-            })
-        ))}
-    </>);
+    );
+}
+
+function Holes() {
+    return Array.from({ length: PLAYER_COUNT }).flatMap((_, player) => (
+        Array.from({ length: HOLE_COUNT }).map((_, hole) => {
+            return <IndicatedHole key={`${player}-${hole}`} player={player} hole={hole} />
+        })
+    ));
+}
+
+function computePaths(from: Vec3, stops: Vec3[], elevation: number): CurvePath<Vec3>[] {
+    const [
+        p0, p1, p2, p3, dir,
+        v0, v1, v2, v3,
+    ] = Array.from({ length: 9 }).map(() => new Vec3());
+
+    const paths = Array.from({ length: stops.length }).map(() => new CurvePath<Vec3>());
+
+    p0.copy(from);
+    p1.copy(from);
+    dir.subVectors(stops[0], from).multiplyScalar(0.25);
+    p1.add(dir);
+    p1.y += elevation;
+    p2.copy(stops[0]);
+    p2.sub(dir);
+    p2.y += elevation;
+    p3.copy(stops[0]);
+    p3.y += elevation;
+
+    // First stop
+    // 1. Moving up from hole
+    dir.multiplyScalar(0.33);
+    v0.copy(p0);
+    v1.copy(p0);
+    v1.y += elevation * 0.33;
+    v2.copy(p1);
+    v2.sub(dir);
+    v3.copy(p1);
+    paths[0].add(new CubicBezierCurve3(v0.clone(), v1.clone(), v2.clone(), v3.clone()));
+
+    // 2. Moving horizontally to next holes
+    v0.copy(p1);
+    v1.copy(p1);
+    v1.add(dir);
+    v2.copy(p2);
+    v2.sub(dir);
+    v3.copy(p3);
+    paths[0].add(new CubicBezierCurve3(v0.clone(), v1.clone(), v2.clone(), v3.clone()));
+
+    // Move horizontally to next stop
+    for (let i = 1; i < stops.length; ++i) {
+        v0.copy(stops[i - 1]);
+        v0.y += elevation;
+        v1.copy(stops[i]);
+        v1.y += elevation;
+        paths[i].add(new LineCurve3(v0.clone(), v1.clone()));
+    }
+
+    return paths;
+}
+
+type AnimationData = {
+    time: number;
+    paths: CurvePath<Vec3>[];
+}
+function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number, waitingTime?: number }) {
+    const store = useStore();
+    const shells = useMemo(() => store.action === "move" ? store.shells ?? [] : [], [store.action, store.shells]);
+
+    const hand = useRef<RapierRigidBody>(null);
+
+    const { rapier, world } = useRapier();
+    const joint = useMemo(() => {
+        const anchor1 = new Vector3(0, 0, 0);
+        const anchor2 = new Vector3(0, 0, 0);
+        return rapier.JointData.rope(SHELL_SIZE * 1.414, anchor1, anchor2);
+    }, [rapier]);
+
+    const animationData = useRef<AnimationData>({ paths: [], time: 1 });
+
+    const joints = useRef<ImpulseJoint[]>([]);
+
+    // Create animation path for Hand body
+    useEffect(() => {
+        if (store.action !== "move") return;
+        if (!store.selectedHole) return;
+        if (!hand.current || !shells) return;
+
+        // Set animation path to next hole
+        let { player, hole } = store.selectedHole;
+        const from = getHolePosition(player, hole).clone();
+        from.y += HOLE_HEIGHT * 0.5;
+        const stops: Vec3[] = [];
+        for (let i = 0; i < shells.length; ++i) {
+            [player, hole] = getNextHole(store.player, player, hole);
+            const to = getHolePosition(player, hole).clone();
+            to.y += HOLE_HEIGHT * 0.5;
+            stops.push(to);
+        }
+        console.log(stops);
+        animationData.current.paths = computePaths(from, stops, HOLE_HEIGHT * 0.5);
+        animationData.current.time = 0;
+        hand.current.setTranslation(from, true);
+    }, [store.action, store.selectedHole, store.player, joint, shells, world]);
+
+    // Create joints between Hand and shells
+    useEffect(() => {
+        if (store.action !== "move") return;
+        if (!store.selectedHole) return;
+        if (!hand.current || !shells) return;
+
+        const created = joints.current;
+        for (const shell of shells) {
+            created.push(world.createImpulseJoint(joint, hand.current, shell, true));
+        }
+
+        return () => {
+            while (created.length) {
+                world.removeImpulseJoint(created.pop()!, true);
+            }
+        }
+    }, [store.action, store.selectedHole, shells, world, joint]);
+
+    // Animate
+    useFrame((_, delta) => {
+        if (!hand.current) return;
+        if (!store.selectedHole) return;
+        if (store.action !== "move") return;
+        if (animationData.current.paths.length === 0) return;
+
+        // Update time
+        let t = animationData.current.time;
+        t += delta / animationTime;
+
+        // Reached the next hole
+        if (t > 1) {
+            const p = animationData.current.paths.shift()!;
+            t = -waitingTime;
+
+            // Drop the lowest shell to avoid missed drops
+            // due to collisions with other shells in hand
+            let lowestIdx = 0;
+            let minY = Infinity;
+            for (let i = 0; i < joints.current.length; ++i) {
+                const y = joints.current[i].body2().translation().y;
+                if (y < minY) {
+                    minY = y;
+                    lowestIdx = i;
+                }
+            }
+            const joint = joints.current.splice(lowestIdx, 1)[0];
+            world.removeImpulseJoint(joint, true);
+
+            // Finished dropping all shells
+            if (animationData.current.paths.length === 0) {
+                const position = p.getPointAt(1);
+                hand.current.setTranslation(position, true);
+                animationData.current.time = 1;
+
+                // Next player's turn
+                store.player = (store.player + 1) % PLAYER_COUNT;
+                store.action = "select";
+
+                return;
+            }
+        }
+
+        // Waiting time
+        if (t < 0) {
+            animationData.current.time = t;
+            return;
+        }
+
+        // Move over time to next hole
+        const path = animationData.current.paths[0];
+        animationData.current.time = t;
+        const position = path.getPointAt(easings.easeOutQuad(t));
+        hand.current.setTranslation(position, true);
+    });
+
+    // DEBUG PATH
+    const [, setUpdate] = useState({});
+    useEffect(() => {
+        setUpdate({});
+    }, [setUpdate, store.action]);
+
+    return (
+        <>
+            <RigidBody ref={hand} type="kinematicPosition">
+                <mesh />
+            </RigidBody>
+            {/* DEBUG PATH */}
+            {animationData.current.paths.map((path, index) => <Line key={index} points={path.getPoints(31)} color="#ff0000" />)}
+        </>
+    );
 }
 
 function IndicatedHole({ player, hole, transition = 0.25 }: HoleKey & { transition?: number }) {
     const store = useStore();
 
-    const holeIndex = player * HOLE_COUNT + hole;
-    const shellIndex = holeIndex * SHELLS_PER_HOLE;
-    const position = getPosition(shellIndex);
+    const position = getHolePosition(player, hole).clone();
+    position.y = 0;
 
     const ref = useHole(useRef<Group>(null));
     const mat = useM_Hole();
@@ -129,11 +457,11 @@ function IndicatedHole({ player, hole, transition = 0.25 }: HoleKey & { transiti
 
     const opacity = useRef({ from: 1, to: 0, time: 0.999 });
     useEffect(() => {
-        const active = !!store.hole && store.hole.player === player && store.hole.hole === hole;
+        const active = store.scene === "Game" && store.player === player && !!store.hoveredHole && store.hoveredHole.player === player && store.hoveredHole.hole === hole;
         opacity.current.from = mat.opacity;
         opacity.current.to = active ? 0.5 : 0;
         opacity.current.time = 0;
-    }, [player, hole, store.hole, mat]);
+    }, [player, hole, store.scene, store.player, store.hoveredHole, mat]);
 
     useFrame((_, delta) => {
         let { from, to, time } = opacity.current;
@@ -149,10 +477,34 @@ function IndicatedHole({ player, hole, transition = 0.25 }: HoleKey & { transiti
         <Hole ref={ref} position={position}
             raycast={Raycast.BoundsOnly} layers={2}
             onPointerEnter={e => {
-                store.hole = { player, hole };
+                if (store.player !== player) return;
+                store.hoveredHole = getHoleKey(player, hole);
             }}
             onPointerLeave={e => {
-                store.hole = null;
+                store.hoveredHole = null;
+            }}
+            onPointerUp={e => {
+                switch (store.action) {
+                    case "select":
+                        if (store.player === player) {
+                            store.selectedHole = store.hoveredHole;
+                            store.action = "confirm";
+                        }
+                        break;
+                    case "confirm":
+                        if (!store.selectedHole) {
+                            throw new Error("Trying to confirm before select!");
+                        }
+                        if (store.selectedHole.player === player && store.selectedHole.hole === hole) {
+                            store.action = "move";
+                        } else {
+                            store.selectedHole = store.hoveredHole;
+                        }
+                        break;
+                    case "move":
+                        store.action = "select";
+                        break;
+                }
             }}
         />
     );

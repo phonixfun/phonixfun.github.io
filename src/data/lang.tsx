@@ -1,3 +1,5 @@
+import { Action } from "@components/Game";
+import { ModalProps } from "@components/Modal";
 import { Theme } from "@utils/Theme";
 
 type Key = "id";
@@ -25,9 +27,21 @@ export type Translation = Readonly<{
     play: string;
     start: string;
     back: string;
+    landscape: string;
     themes: Record<Theme, string> & {
         choose: string;
-    }
+    };
+    modal: {
+        confirm: string;
+        cancel: string;
+        quit: ModalProps;
+    };
+    gameplay: Record<Action, string> & {
+        yourTurn: string;
+        oppTurn: string;
+        wait: string;
+        listen: string;
+    };
 }>;
 
 export const translations: Record<Key, Translation> = {
@@ -35,7 +49,8 @@ export const translations: Record<Key, Translation> = {
         title: "Phonix Fun",
         play: "Play",
         start: "Start game",
-        back: "Back",
+        back: "←",
+        landscape: "Please turn the device to landscape",
         themes: {
             choose: "Choose a theme",
             "1": "one",
@@ -43,6 +58,24 @@ export const translations: Record<Key, Translation> = {
             "3": "three",
             "4": "four",
             "5": "five",
-        }
+        },
+        modal: {
+            confirm: "Yes",
+            cancel: "No",
+            quit: {
+                title: "Quit",
+                content: <>Are you sure you want to quit the game?</>,
+            }
+        },
+        gameplay: {
+            yourTurn: "Your turn",
+            oppTurn: "Opponent's turn",
+            wait: "Please wait while your opponent plays.",
+            listen: "🔊",
+            select: "Tap on one of your holes.",
+            confirm: "This hole has $COUNT(shell|shells). Tap on this hole once more to play this move!",
+            move: "",
+            speak: "Say the word shown on the board.",
+        },
     },
 } as const;

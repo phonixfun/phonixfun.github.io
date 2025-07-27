@@ -1,0 +1,45 @@
+.root {
+    border: none;
+    max-width: 80%;
+    max-height: 80%;
+    padding: 40rem;
+    background-color: transparent;
+    color: white;
+}
+
+.root::backdrop {
+    backdrop-filter: blur(30px);
+    background-color: rgba(0, 0, 0, 0.75);
+}
+
+.root h1 {
+    margin: 0;
+}
+
+.content {
+    line-height: 200%;
+}
+
+.buttons {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.button {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    pointer-events: initial;
+    cursor: pointer;
+    min-width: 120px;
+    width: max-content;
+    max-width: 400px;
+    border-radius: 70px;
+    height: 70px;
+    border: 1px solid lightgray;
+}
