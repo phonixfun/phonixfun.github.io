@@ -27,6 +27,10 @@ export type Translation = Readonly<{
     play: string;
     start: string;
     back: string;
+    unsupported: string;
+    microphone: string;
+    allowMic: string;
+    speak: string;
     landscape: string;
     themes: Record<Theme, string> & {
         choose: string;
@@ -50,6 +54,10 @@ export const translations: Record<Key, Translation> = {
         play: "Play",
         start: "Start game",
         back: "←",
+        unsupported: "This game is not supported in your current browser. Try updating to the latest version or use Google Chrome or Safari.",
+        microphone: "Please allow access to your microphone.",
+        allowMic: "Allow microphone",
+        speak: "Click here, then say the word",
         landscape: "Please turn the device to landscape",
         themes: {
             choose: "Choose a theme",
@@ -74,6 +82,7 @@ export const translations: Record<Key, Translation> = {
             listen: "🔊",
             select: "Tap on one of your holes.",
             confirm: "This hole has $COUNT(shell|shells). Tap on this hole once more to play this move!",
+            init: "",
             move: "",
             speak: "Say the word shown on the board.",
         },

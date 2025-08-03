@@ -15,8 +15,25 @@ import useM_Hole from "@materials/M_Hole";
 import { useStore } from "@utils/useStore";
 import { easings } from "react-spring";
 import CameraControlsImpl from "camera-controls";
+import SpeechRecognition, { useSpeechRecognition } from "react-speech-recognition";
 
-export type Action = "select" | "confirm" | "move" | "speak";
+export type Action = "select" | "confirm" | "init" | "move" | "speak";
+
+/*
+TODO:
+- Select and display word to say after drop
+- Implement TTS of word
+- Implement and activate STT
+- Loading screen during physics warmup
+- Reset shell positions
+- Implement rules of Congklak:
+  1. If last is in non-empty hole: take all from that hole and continue
+  2. If last is in empty hole on your side: take all from opposite hole and drop in your store. Then change player
+  3. If last is in empty hole on opponent side, change player
+  4. If last is in store, take another turn
+  5. End game when you run out of shells on your side. Remaining shells on opposite side go to opponent's store
+- Count stores and display winner
+*/
 
 export function Game() {
     return (<>
@@ -32,6 +49,7 @@ export function Game() {
                 <Physics gravity={[0, -9.81, 0]}>
                     <Models />
                 </Physics>
+                <Speech />
                 {process.env.NODE_ENV === "development" && <Perf position="bottom-left" deepAnalyze overClock />}
             </Suspense>
             <Controls />
@@ -310,7 +328,7 @@ type AnimationData = {
 }
 function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number, waitingTime?: number }) {
     const store = useStore();
-    const shells = useMemo(() => store.action === "move" ? store.shells ?? [] : [], [store.action, store.shells]);
+    const shells = useMemo(() => store.action === "init" ? store.shells ?? [] : [], [store.action, store.shells]);
 
     const hand = useRef<RapierRigidBody>(null);
 
@@ -327,7 +345,7 @@ function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number
 
     // Create animation path for Hand body
     useEffect(() => {
-        if (store.action !== "move") return;
+        if (store.action !== "init") return;
         if (!store.selectedHole) return;
         if (!hand.current || !shells) return;
 
@@ -350,7 +368,7 @@ function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number
 
     // Create joints between Hand and shells
     useEffect(() => {
-        if (store.action !== "move") return;
+        if (store.action !== "init") return;
         if (!store.selectedHole) return;
         if (!hand.current || !shells) return;
 
@@ -359,12 +377,30 @@ function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number
             created.push(world.createImpulseJoint(joint, hand.current, shell, true));
         }
 
-        return () => {
-            while (created.length) {
-                world.removeImpulseJoint(created.pop()!, true);
-            }
-        }
+        // return () => {
+        //     while (created.length) {
+        //         world.removeImpulseJoint(created.pop()!, true);
+        //     }
+        // }
     }, [store.action, store.selectedHole, shells, world, joint]);
+
+    // Speak when taking from hole
+    useEffect(() => {
+        if (store.action === "init") {
+            store.action = "speak";
+        }
+    }, [store.action, store]);
+
+    // Pick a random word from the list
+    useEffect(() => {
+        if (store.action === "speak") {
+            let next = store.word;
+            while (next === store.word) {
+                next = store.words[Math.floor(Math.random() * store.words.length)];
+            }
+            store.word = next;
+        }
+    }, [store.action, store.words, store]);
 
     // Animate
     useFrame((_, delta) => {
@@ -395,6 +431,9 @@ function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number
             }
             const joint = joints.current.splice(lowestIdx, 1)[0];
             world.removeImpulseJoint(joint, true);
+
+            // Speak a word when dropping a shell
+            setTimeout(() => store.action = "speak", waitingTime * 1000);
 
             // Finished dropping all shells
             if (animationData.current.paths.length === 0) {
@@ -496,16 +535,55 @@ function IndicatedHole({ player, hole, transition = 0.25 }: HoleKey & { transiti
                             throw new Error("Trying to confirm before select!");
                         }
                         if (store.selectedHole.player === player && store.selectedHole.hole === hole) {
-                            store.action = "move";
+                            store.action = "init";
                         } else {
                             store.selectedHole = store.hoveredHole;
                         }
-                        break;
-                    case "move":
-                        store.action = "select";
                         break;
                 }
             }}
         />
     );
+}
+
+function Speech() {
+    const store = useStore();
+
+    const { browserSupportsSpeechRecognition, isMicrophoneAvailable, listening, transcript } = useSpeechRecognition({
+        transcribing: true
+    });
+
+    useEffect(() => {
+        if (!store.word) return;
+        store.listening = listening;
+        if (listening) return;
+        const regex = new RegExp(`${store.word.replaceAll(/\s/g, "")}`, "i");
+        if (regex.test(transcript.replaceAll(/\s/g, ""))) {
+            store.action = "move";
+            store.listening = false;
+            if (listening) SpeechRecognition.stopListening();
+        } else {
+            SpeechRecognition.startListening({ language: "en-GB" });
+        }
+    }, [store.word, store, listening, transcript]);
+
+    useEffect(() => {
+        if (store.scene !== "Game") return;
+        if (store.error !== null) return;
+        if (store.action !== "speak") return;
+        SpeechRecognition.startListening({ language: "en-GB" });
+        store.listening = true;
+    }, [store.scene, store.error, store.action, store]);
+
+    if (store.action === "speak") {
+        if (!browserSupportsSpeechRecognition) {
+            store.error = "Unsupported";
+        }
+
+        if (!isMicrophoneAvailable) {
+            store.error = "Microphone";
+        }
+    }
+
+    return null;
 }

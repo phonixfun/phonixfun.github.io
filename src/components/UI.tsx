@@ -1,10 +1,11 @@
 import styles from "@styles/UI.module.css";
 import { LangContext } from "@contexts/LangContext";
 import { MainData, Scenes, useStore } from "@utils/useStore";
-import { ReactNode, useCallback, useContext, useEffect } from "react";
+import { ReactNode, useCallback, useContext, useEffect, useMemo } from "react";
 import { Theme } from "@utils/Theme";
 import { Modal, modal } from "@components/Modal";
 import { assetPath } from "@utils/Config";
+import SpeechRecognition, { useSpeechRecognition } from "react-speech-recognition";
 
 async function fullscreenLandscape(store: MainData) {
     try {
@@ -55,21 +56,39 @@ export function UI() {
         loadWords(store.theme).then(words => store.words = words);
     }, [store.scene, store.theme, store]);
 
-    useEffect(() => {
-        if (store.scene === "Game") fullscreenLandscape(store);
-    }, [store, store.scene]);
-
     let ActiveUI: () => ReactNode = () => null;
     switch (store.scene) {
         case "MainMenu": ActiveUI = MainMenu; break;
         case "ChooseTheme": ActiveUI = ThemeMenu; break;
         case "ToLandscape": ActiveUI = PromptLandscape; break;
-        case "Game": ActiveUI = GameUI; break;
+        case "Game": {
+            switch (store.error) {
+                case null: ActiveUI = GameUI; break;
+                case "Unsupported": ActiveUI = ErrorUnsupported; break;
+                case "Microphone": ActiveUI = ErrorMicrophone; break;
+            }
+            break;
+        }
+    }
+
+    let blur: "off" | "on" | "strong" = "off";
+    switch (store.scene) {
+        case "MainMenu":
+        case "ChooseTheme":
+        case "ToLandscape":
+            blur = "strong";
+            break;
+        case "Game": {
+            if (store.error) blur = "strong";
+            else if (store.action === "speak") blur = "off";
+        }
     }
 
     return (
         <div className={styles.ui}>
-            <ActiveUI />
+            <div className={`${styles.blur} ${styles[blur]}`}>
+                <ActiveUI />
+            </div>
             <Modal />
         </div>
     );
@@ -82,8 +101,42 @@ function MainMenu() {
         <div className={styles.menu}>
             <h3>{i18n.title}</h3>
             <div className={styles.buttons}>
-                <Button label={i18n.play} onClick={() => store.scene = "ChooseTheme"} />
+                <Button label={i18n.play} onClick={() => { store.scene = "ChooseTheme"; SpeechRecognition.startListening(); }} />
             </div>
+        </div>
+    </>);
+}
+
+function ErrorUnsupported() {
+    const { lang: { translation: i18n } } = useContext(LangContext);
+    const store = useStore();
+    useEffect(() => {
+    }, [store]);
+
+    return (<>
+        <div className={styles.menu}>
+            <span>{i18n.unsupported}</span>
+        </div>
+    </>);
+}
+
+function ErrorMicrophone() {
+    const { lang: { translation: i18n } } = useContext(LangContext);
+    const store = useStore();
+
+    SpeechRecognition.startListening({ language: "en-GB" });
+    const { isMicrophoneAvailable } = useSpeechRecognition();
+    if (isMicrophoneAvailable) {
+        SpeechRecognition.stopListening();
+        store.error = null;
+    }
+
+    return (<>
+        <div className={styles.menu}>
+            <span>{i18n.microphone}</span>
+            <Button label={i18n.allowMic} active
+                onClick={() => SpeechRecognition.browserSupportsSpeechRecognition()}
+            />
         </div>
     </>);
 }
@@ -102,7 +155,7 @@ function ThemeMenu() {
                 <ThemeButton theme={"5"} />
             </div>
             <div className={styles.controls}>
-                <Button label={i18n.start} onClick={() => store.scene = "Game"} disabled={!store.theme} />
+                <Button label={i18n.start} onClick={() => { store.scene = "Game"; fullscreenLandscape(store); }} disabled={!store.theme} />
             </div>
             <BackButton />
         </div>
@@ -166,14 +219,38 @@ function Instruction({ player }: { player: number }) {
 }
 
 function Word() {
+    const { lang: { translation: i18n } } = useContext(LangContext);
     const store = useStore();
 
+    const tts = useMemo(() => {
+        if (!store.word) return null;
+        const tts = new SpeechSynthesisUtterance(store.word);
+        tts.lang = "en-GB";
+        tts.addEventListener("start", () => SpeechRecognition.abortListening());
+        tts.addEventListener("end", () => SpeechRecognition.startListening({ language: "en-GB" }));
+        return tts;
+    }, [store.word]);
+
+    const { transcript } = useSpeechRecognition({ transcribing: true });
+
     if (store.action !== "speak") return null;
+
+    const classes = [styles.word];
+    if (store.player === 1) classes.push(styles.flip);
+
     return (
-        <div className={styles.word}>
-            {/* TODO: Use store.word */}
-            <span className={store.player === 0 ? styles.normal : styles.flip}>{store.words}</span>
-            {/* TODO: Listen button with TTS */}
+        <div className={classes.join(" ")}>
+            <div className={styles.main}>
+                <span>{store.word}</span>
+                {tts && <Button label={i18n.gameplay.listen} classes={styles.listen}
+                    onClick={() => {
+                        window.speechSynthesis.speak(tts)
+                    }}
+                />}
+            </div>
+            <div className={styles.transcript}>
+                <span className={styles.transcript}>test: {transcript}</span>
+            </div>
         </div>
     );
 }

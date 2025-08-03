@@ -4,15 +4,20 @@ import { Theme } from "@utils/Theme";
 import { Action, HoleKey } from "@components/Game";
 import { RapierRigidBody } from "@react-three/rapier";
 
-export type Scenes = 
+export type Scenes =
     "MainMenu" |
     "ChooseTheme" |
     "ToLandscape" |
     "Game";
 
+export type Errors =
+    "Unsupported" |
+    "Microphone";
+
 export type MainData = {
     theme: Theme | null;
     scene: Scenes;
+    error: Errors | null;
     player: number;
     action: Action;
     initialized: boolean;
@@ -21,11 +26,13 @@ export type MainData = {
     shells: RapierRigidBody[] | null;
     words: string[];
     word: string | null;
+    listening: boolean;
 }
 
 export const state = proxy<MainData>({
     theme: null,
     scene: "MainMenu",
+    error: null,
     player: 0,
     initialized: false,
     action: "select",
@@ -34,6 +41,7 @@ export const state = proxy<MainData>({
     shells: null,
     words: [],
     word: null,
+    listening: false,
 });
 
 export const useStore = () => useProxy(state);
