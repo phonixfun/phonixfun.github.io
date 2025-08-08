@@ -1,13 +1,13 @@
 {
   "files": {
-    "main.css": "https://phonixfun.github.io/static/css/main.4a68816f.css",
-    "main.js": "https://phonixfun.github.io/static/js/main.2c65de3a.js",
+    "main.css": "https://phonixfun.github.io/static/css/main.3de3942e.css",
+    "main.js": "https://phonixfun.github.io/static/js/main.feebe640.js",
     "index.html": "https://phonixfun.github.io/index.html",
-    "main.4a68816f.css.map": "https://phonixfun.github.io/static/css/main.4a68816f.css.map",
-    "main.2c65de3a.js.map": "https://phonixfun.github.io/static/js/main.2c65de3a.js.map"
+    "main.3de3942e.css.map": "https://phonixfun.github.io/static/css/main.3de3942e.css.map",
+    "main.feebe640.js.map": "https://phonixfun.github.io/static/js/main.feebe640.js.map"
   },
   "entrypoints": [
-    "static/css/main.4a68816f.css",
-    "static/js/main.2c65de3a.js"
+    "static/css/main.3de3942e.css",
+    "static/js/main.feebe640.js"
   ]
 }
