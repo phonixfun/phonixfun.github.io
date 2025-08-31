@@ -16,22 +16,14 @@ import { useStore } from "@utils/useStore";
 import { easings } from "react-spring";
 import CameraControlsImpl from "camera-controls";
 import SpeechRecognition, { useSpeechRecognition } from "react-speech-recognition";
+import { hasParam } from "@utils/Params";
 
-export type Action = "select" | "confirm" | "init" | "move" | "speak";
+export type Action = "select" | "confirm" | "init" | "move" | "speak" | "end" | "steal-init" | "steal-move" | "steal-end" | "clean-init" | "clean-move" | "clean-end";
 
 /*
 TODO:
-- Select and display word to say after drop
-- Implement TTS of word
-- Implement and activate STT
 - Loading screen during physics warmup
 - Reset shell positions
-- Implement rules of Congklak:
-  1. If last is in non-empty hole: take all from that hole and continue
-  2. If last is in empty hole on your side: take all from opposite hole and drop in your store. Then change player
-  3. If last is in empty hole on opponent side, change player
-  4. If last is in store, take another turn
-  5. End game when you run out of shells on your side. Remaining shells on opposite side go to opponent's store
 - Count stores and display winner
 */
 
@@ -115,6 +107,10 @@ const decomposeIndex = (index: number) => {
     return { player, hole, shell };
 }
 
+const getNextPlayer = (player: number): number => {
+    return (player + 1) % PLAYER_COUNT;
+}
+
 const getNextHole = (playingPlayer: number, player: number, hole: number): [player: number, hole: number] => {
     ++hole;
     if (
@@ -128,6 +124,13 @@ const getNextHole = (playingPlayer: number, player: number, hole: number): [play
         hole = 0;
     }
     return [player, hole];
+}
+
+const getOppositeHole = (player: number, hole: number): [player: number, hole: number] => {
+    return [
+        getNextPlayer(player),
+        HOLE_COUNT - 1 - hole
+    ];
 }
 
 const computeHolePosition = (holeKey: HoleKey): Vec3 => {
@@ -235,12 +238,19 @@ function Shells() {
         return selected;
     }, []);
 
+    const getPlayerShells = useCallback((player: number) => {
+        const selected: RapierRigidBody[] = [];
+        for (let i = 0; i < HOLE_COUNT; ++i) {
+            selected.push(...getHoleShells(player, i));
+        }
+        return selected;
+    }, [getHoleShells]);
+
     useEffect(() => {
         if (!store.selectedHole) return;
         const { player, hole } = store.selectedHole;
         const shells = getHoleShells(player, hole);
         store.shells = shells;
-        console.log(shells);
     }, [store.selectedHole, getHoleShells, store]);
 
     const [, update] = useState({});
@@ -249,10 +259,50 @@ function Shells() {
             store.initialized = true;
             update({});
         }
-    }, [store.initialized, store, update])
+    }, [store.initialized, store, update]);
+
+    useEffect(() => {
+        if (!store.action.endsWith("end")) return;
+        if (store.action === "steal-end") {
+            store.player = getNextPlayer(store.player);
+            store.action = "select";
+            return;
+        }
+        if (!store.selectedHole) return;
+        const { player, hole } = store.selectedHole;
+
+        // 1. End game when you run out of shells on your side. Remaining shells on opposite side go to opponent's store
+        if (getPlayerShells(store.player).length === 0) {
+            store.action = "clean-init";
+            return;
+        }
+        // 2. If last is in store, take another turn
+        if (hole === STORE_INDEX) {
+            store.action = "select";
+            return;
+        }
+        // 3. If last is in non-empty hole: take all from that hole and continue (>1 because we just dropped 1 into the hole)
+        const shells = getHoleShells(player, hole);
+        if (shells.length > 1) {
+            store.shells = shells;
+            store.action = "init";
+            return;
+        }
+        // 4. If last is in empty hole on your side: take all from opposite hole and drop in your store. Then change player
+        if (player === store.player) {
+            store.shells = getHoleShells(...getOppositeHole(player, hole))
+            store.action = "steal-init";
+            // store.player = getNextPlayer(store.player);
+            // store.action = "select";
+            return;
+        }
+        // 5. If last is in empty hole on opponent side, change player
+        store.player = getNextPlayer(store.player);
+        store.action = "select";
+    }, [getHoleShells, getPlayerShells, store, store.action]);
 
     return (
-        <InstancedRigidBodies instances={shells} ref={bodies} colliders="ball" gravityScale={0.1} mass={0.01} friction={0.001} linearDamping={0.85} angularDamping={0.95}>
+        <InstancedRigidBodies instances={shells} ref={bodies} colliders="ball" gravityScale={0.1} mass={0.01} friction={0.001} linearDamping={0.85} angularDamping={0.95} ccd>
             <instancedMesh castShadow receiveShadow
                 args={[geom, undefined, SHELL_COUNT]}
                 raycast={Raycast.Disabled}
@@ -325,10 +375,11 @@ function computePaths(from: Vec3, stops: Vec3[], elevation: number): CurvePath<V
 type AnimationData = {
     time: number;
     paths: CurvePath<Vec3>[];
+    end: HoleKey;
 }
 function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number, waitingTime?: number }) {
     const store = useStore();
-    const shells = useMemo(() => store.action === "init" ? store.shells ?? [] : [], [store.action, store.shells]);
+    const shells = useMemo(() => store.action.endsWith("init") ? store.shells ?? [] : [], [store.action, store.shells]);
 
     const hand = useRef<RapierRigidBody>(null);
 
@@ -339,7 +390,7 @@ function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number
         return rapier.JointData.rope(SHELL_SIZE * 1.414, anchor1, anchor2);
     }, [rapier]);
 
-    const animationData = useRef<AnimationData>({ paths: [], time: 1 });
+    const animationData = useRef<AnimationData>({ paths: [], time: 1, end: { player: 0, hole: 0 } });
 
     const joints = useRef<ImpulseJoint[]>([]);
 
@@ -360,15 +411,15 @@ function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number
             to.y += HOLE_HEIGHT * 0.5;
             stops.push(to);
         }
-        console.log(stops);
         animationData.current.paths = computePaths(from, stops, HOLE_HEIGHT * 0.5);
         animationData.current.time = 0;
+        animationData.current.end = getHoleKey(player, hole);
         hand.current.setTranslation(from, true);
-    }, [store.action, store.selectedHole, store.player, joint, shells, world]);
+    }, [store.action, store.selectedHole, store.player, shells]);
 
     // Create joints between Hand and shells
     useEffect(() => {
-        if (store.action !== "init") return;
+        if (!store.action.endsWith("init")) return;
         if (!store.selectedHole) return;
         if (!hand.current || !shells) return;
 
@@ -383,6 +434,24 @@ function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number
         //     }
         // }
     }, [store.action, store.selectedHole, shells, world, joint]);
+
+    useEffect(() => {
+        if (store.action !== "steal-init") return;
+        if (!store.selectedHole) return;
+        if (!hand.current) return;
+
+        let { player, hole } = store.selectedHole;
+        const from = getHolePosition(...getOppositeHole(player, hole)).clone();
+        from.y += HOLE_HEIGHT * 0.5;
+        const to = getHolePosition(player, STORE_INDEX).clone();
+        to.y += HOLE_HEIGHT * 0.5;
+        animationData.current.paths = computePaths(from, [to], HOLE_HEIGHT * 0.5);
+        animationData.current.time = 0;
+        animationData.current.end = getHoleKey(player, hole);
+        hand.current.setTranslation(from, true);
+
+        store.action = "steal-move";
+    }, [store.action, store.selectedHole, store]);
 
     // Speak when taking from hole
     useEffect(() => {
@@ -406,8 +475,14 @@ function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number
     useFrame((_, delta) => {
         if (!hand.current) return;
         if (!store.selectedHole) return;
-        if (store.action !== "move") return;
+        if (!store.action.endsWith("move")) return;
         if (animationData.current.paths.length === 0) return;
+
+        // Force keep objects awake
+        hand.current.wakeUp();
+        for (const joint of joints.current) {
+            joint.body2().wakeUp();
+        }
 
         // Update time
         let t = animationData.current.time;
@@ -420,20 +495,24 @@ function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number
 
             // Drop the lowest shell to avoid missed drops
             // due to collisions with other shells in hand
-            let lowestIdx = 0;
-            let minY = Infinity;
-            for (let i = 0; i < joints.current.length; ++i) {
-                const y = joints.current[i].body2().translation().y;
-                if (y < minY) {
-                    minY = y;
-                    lowestIdx = i;
+            if (store.action === "move") {
+                let lowestIdx = 0;
+                let minY = Infinity;
+                for (let i = 0; i < joints.current.length; ++i) {
+                    const y = joints.current[i].body2().translation().y;
+                    if (y < minY) {
+                        minY = y;
+                        lowestIdx = i;
+                    }
+                }
+                const joint = joints.current.splice(lowestIdx, 1)[0];
+                if (joint) world.removeImpulseJoint(joint, true);
+            }
+            else if (store.action === "steal-move") {
+                while (joints.current.length) {
+                    world.removeImpulseJoint(joints.current.pop()!, true);
                 }
             }
-            const joint = joints.current.splice(lowestIdx, 1)[0];
-            world.removeImpulseJoint(joint, true);
-
-            // Speak a word when dropping a shell
-            setTimeout(() => store.action = "speak", waitingTime * 1000);
 
             // Finished dropping all shells
             if (animationData.current.paths.length === 0) {
@@ -441,12 +520,18 @@ function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number
                 hand.current.setTranslation(position, true);
                 animationData.current.time = 1;
 
-                // Next player's turn
-                store.player = (store.player + 1) % PLAYER_COUNT;
-                store.action = "select";
+                // End this move
+                setTimeout(() => {
+                    store.action = store.action.replace("move", "end") as Action;
+                    store.word = null;
+                    store.selectedHole = animationData.current.end;
+                }, waitingTime * 1000);
 
                 return;
             }
+
+            // Speak a word when dropping a shell
+            setTimeout(() => store.action = "speak", waitingTime * 1000);
         }
 
         // Waiting time
@@ -474,7 +559,7 @@ function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number
                 <mesh />
             </RigidBody>
             {/* DEBUG PATH */}
-            {animationData.current.paths.map((path, index) => <Line key={index} points={path.getPoints(31)} color="#ff0000" />)}
+            {hasParam("debug") && animationData.current.paths.map((path, index) => <Line key={index} points={path.getPoints(31)} color="#ff0000" />)}
         </>
     );
 }
@@ -555,8 +640,17 @@ function Speech() {
 
     useEffect(() => {
         if (!store.word) return;
+
+        if (hasParam("debug")) {
+            store.listening = false;
+            store.action = "move";
+            if (listening) SpeechRecognition.stopListening();
+            return;
+        }
+        
         store.listening = listening;
         if (listening) return;
+        if (!transcript) return;
         const regex = new RegExp(`${store.word.replaceAll(/\s/g, "")}`, "i");
         if (regex.test(transcript.replaceAll(/\s/g, ""))) {
             store.action = "move";
@@ -565,6 +659,7 @@ function Speech() {
         } else {
             SpeechRecognition.startListening({ language: "en-GB" });
         }
+        console.log("tested", listening, transcript);
     }, [store.word, store, listening, transcript]);
 
     useEffect(() => {

@@ -54,7 +54,7 @@ export function UI() {
         if (!store.theme) return;
         if (store.scene !== "Game") return;
         loadWords(store.theme).then(words => store.words = words);
-    }, [store.scene, store.theme, store]);
+    }, [store.scene, store.theme]); // eslint-disable-line react-hooks/exhaustive-deps
 
     let ActiveUI: () => ReactNode = () => null;
     switch (store.scene) {

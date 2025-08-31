@@ -85,6 +85,13 @@ export const translations: Record<Key, Translation> = {
             init: "",
             move: "",
             speak: "Say the word shown on the board.",
+            end: "",
+            "steal-init": "",
+            "steal-move": "",
+            "steal-end": "",
+            "clean-init": "",
+            "clean-move": "",
+            "clean-end": "",
         },
     },
 } as const;
