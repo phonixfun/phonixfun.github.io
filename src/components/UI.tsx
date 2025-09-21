@@ -43,7 +43,6 @@ async function loadWords(theme: Theme) {
     const response = await fetch(assetPath(`/data/words.json`));
     if (!response.ok) throw new Error(`Failed to load words for theme ${theme}`);
     const data = await response.json();
-    console.log("loaded words", theme);
     return data[theme];
 }
 
@@ -193,20 +192,33 @@ function GameUI() {
             <Instruction player={1} />
         </div>
         <Word />
+        <Replay />
     </>);
 }
 
+const countable = /\$COUNT\(([^|]+)\|([^)]+)\)/;
 function Instruction({ player }: { player: number }) {
     const { lang: { translation: i18n } } = useContext(LangContext);
     const store = useStore();
-    let turn: string = i18n.gameplay.oppTurn;
-    let instruction: string = i18n.gameplay.wait;
-    if (store.player === player) {
+    let turn: string = store.player === -1 ? i18n.gameplay.gameEnd : i18n.gameplay.oppTurn;
+    let instruction: string = store.player === -1 ? "" : i18n.gameplay.wait;
+    if (store.result !== null) {
+        const players = store.result.length;
+        const myScore = store.result[player];
+        const oppScore = store.result[(player + 1) % players];
+        const winner = myScore > oppScore;
+        turn = winner ? i18n.gameplay.winner : i18n.gameplay.loser;
+        instruction = winner ? i18n.gameplay.winText : i18n.gameplay.loseText;
+        instruction = instruction.replace(countable, myScore === 1 ? `${myScore} $1` : `${myScore} $2`);
+    }
+    else if (store.player === -1) {
+        turn = i18n.gameplay.gameEnd;
+        instruction = "";
+    }
+    else if (store.player === player) {
         turn = i18n.gameplay.yourTurn;
         instruction = i18n.gameplay[store.action];
-        if (!instruction) console.log(store.action);
         if (store.shells) {
-            const countable = /\$COUNT\(([^|]+)\|([^)]+)\)/;
             const count = store.shells.length;
             instruction = instruction.replace(countable, count === 1 ? `${count} $1` : `${count} $2`);
         }
@@ -232,8 +244,6 @@ function Word() {
         return tts;
     }, [store.word]);
 
-    const { transcript } = useSpeechRecognition({ transcribing: true });
-
     if (!store.action.startsWith("speak")) return null;
 
     const classes = [styles.word];
@@ -249,9 +259,18 @@ function Word() {
                     }}
                 />}
             </div>
-            <div className={styles.transcript}>
-                <span className={styles.transcript}>test: {transcript}</span>
-            </div>
+        </div>
+    );
+}
+
+function Replay() {
+    const { lang: { translation: i18n } } = useContext(LangContext);
+    const store = useStore();
+    if (store.result === null) return null;
+    return (
+        <div className={styles.menu} style={{ gap: "10px" }}>
+            <Button label={i18n.playAgain} onClick={() => store.scene = "NewGame"} />
+            <Button label={i18n.playAgainNewTheme} onClick={() => store.scene = "ChooseTheme"} />
         </div>
     );
 }

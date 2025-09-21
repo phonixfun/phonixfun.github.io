@@ -27,6 +27,8 @@ export type Translation = Readonly<{
     play: string;
     start: string;
     back: string;
+    playAgain: string;
+    playAgainNewTheme: string;
     unsupported: string;
     microphone: string;
     allowMic: string;
@@ -45,6 +47,11 @@ export type Translation = Readonly<{
         oppTurn: string;
         wait: string;
         listen: string;
+        gameEnd: string;
+        winner: string;
+        loser: string;
+        winText: string;
+        loseText: string;
     };
 }>;
 
@@ -54,6 +61,8 @@ export const translations: Record<Key, Translation> = {
         play: "Play",
         start: "Start game",
         back: "←",
+        playAgain: "Play another round",
+        playAgainNewTheme: "Choose a different theme",
         unsupported: "This game is not supported in your current browser. Try updating to the latest version or use Google Chrome or Safari.",
         microphone: "Please allow access to your microphone.",
         allowMic: "Allow microphone",
@@ -80,6 +89,12 @@ export const translations: Record<Key, Translation> = {
             "oppTurn": "Opponent's turn",
             "wait": "Please wait while your opponent plays.",
             "listen": "🔊",
+            "gameEnd": "Game has ended",
+            "winner": "Winner",
+            "loser": "Loser",
+            "winText": "Congratulations, you won! You had $COUNT(shell|shells)!",
+            "loseText": "You only had $COUNT(shell|shells).",
+
             "select": "Tap on one of your holes.",
             "confirm": "This hole has $COUNT(shell|shells). Tap on this hole once more to play this move!",
             "init": "",

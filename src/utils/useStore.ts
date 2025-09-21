@@ -8,7 +8,8 @@ export type Scenes =
     "MainMenu" |
     "ChooseTheme" |
     "ToLandscape" |
-    "Game";
+    "Game" |
+    "NewGame";
 
 export type Errors =
     "Unsupported" |
@@ -27,6 +28,7 @@ export type MainData = {
     words: string[];
     word: string | null;
     listening: boolean;
+    result: number[] | null;
 }
 
 export const state = proxy<MainData>({
@@ -42,6 +44,7 @@ export const state = proxy<MainData>({
     words: [],
     word: null,
     listening: false,
+    result: null,
 });
 
 export const useStore = () => useProxy(state);

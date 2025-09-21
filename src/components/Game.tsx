@@ -22,10 +22,7 @@ export type Action = "select" | "confirm" | "init" | "move" | "speak" | "speak-s
 
 /*
 TODO:
-- Clean phase (empty board)
 - Loading screen during physics warmup
-- Reset shell positions
-- Count stores and display winner
 */
 
 export function Game() {
@@ -60,6 +57,10 @@ function OptimizeShaders() {
 function Initialization() {
     const store = useStore();
     useEffect(() => {
+        if (store.scene === "NewGame") {
+            store.scene = "Game";
+            return;
+        }
         if (store.scene === "Game") {
             store.action = "select";
             store.initialized = false;
@@ -67,6 +68,7 @@ function Initialization() {
             store.selectedHole = null;
             store.shells = null;
             store.word = null;
+            store.result = null;
         }
     }, [store.scene, store]);
     return null;
@@ -187,11 +189,17 @@ const getHolePosition = (player: number, hole: number) => {
     return holePositions.get(getHoleKey(player, hole))!;
 }
 
+const initialShellPosition = (index: number) => {
+    const { player, hole, shell } = decomposeIndex(index);
+    const position = getHolePosition(player, hole).clone();
+    position.y += HOLE_HEIGHT * 0.5 + SHELL_SIZE * shell;
+    return position;
+}
+
 const createShell = (index: number): InstancedRigidBodyProps => {
     const { player, hole, shell } = decomposeIndex(index);
     const key = `${player}-${hole}-${shell}`;
-    const position = getHolePosition(player, hole).clone();
-    position.y += HOLE_HEIGHT * 0.5 + SHELL_SIZE * shell;
+    const position = initialShellPosition(index);
     return ({ key, position });
 };
 
@@ -234,6 +242,18 @@ function Shells() {
     const M_Shell = useM_Shell();
 
     const shells = useMemo(() => Array.from({ length: SHELL_COUNT }).map((_, index) => createShell(index)), []);
+    useEffect(() => {
+        if (store.scene !== "Game") return;
+        if (!bodies.current) return;
+        for (let i = 0; i < bodies.current.length; ++i) {
+            const position = initialShellPosition(i);
+            const translation = new Vector3(position.x, position.y, position.z);
+            bodies.current[i].setTranslation(translation, false);
+            bodies.current[i].resetForces(false);
+            bodies.current[i].resetTorques(false);
+            bodies.current[i].wakeUp();
+        }
+    }, [bodies, store.scene]);
 
     const getHoleShells = useCallback((player: number, hole: number) => {
         const holePosition = getHolePosition(player, hole);
@@ -263,6 +283,7 @@ function Shells() {
 
     useEffect(() => {
         if (!store.selectedHole) return;
+        if (store.player === -1) return;
         const { player, hole } = store.selectedHole;
         const shells = getHoleShells(player, hole);
         store.shells = shells;
@@ -283,12 +304,42 @@ function Shells() {
             store.action = "select";
             return;
         }
+        if (store.action === "clean-end") {
+            store.result = [
+                getHoleShells(0, STORE_INDEX).length, 
+                getHoleShells(1, STORE_INDEX).length 
+            ];
+            return;
+        }
         if (!store.selectedHole) return;
         const { player, hole } = store.selectedHole;
 
-        // 1. End game when you run out of shells on your side. Remaining shells on opposite side go to opponent's store
-        if (getPlayerShells(store.player).length === 0) {
+        // 1. End game when someone runs out of shells on their side. Remaining shells go to player's store
+        let end = false;
+        if (getPlayerShells(0).length === 0) {
+            // Player 0's holes are empty, so player 1 gets the remaining shells
+            store.player = 1;
+            end = true;
+        } else if (getPlayerShells(1).length === 0) {
+            store.player = 0; // Player 1's holes are empty, so player 0 gets the remaining shells
+            end = true;
+        }
+        if (end) {
             store.action = "clean-init";
+            const shells: RapierRigidBody[] = [];
+            let foundStart = false;
+            for (let i = 0; i < HOLE_COUNT; ++i) {
+                const holeShells = getHoleShells(store.player, i);
+                if (holeShells.length === 0) continue;
+                if (!foundStart) {
+                    foundStart = true;
+                    store.selectedHole = getHoleKey(store.player, i);
+                }
+                shells.push(...holeShells);
+                // Insert a marker in the form of `null` so that we can make a sweep motion over each hole
+                shells.push(null!);
+            }
+            store.shells = shells;
             return;
         }
         // 2. If last is in store, take another turn after speaking a word
@@ -392,7 +443,7 @@ type AnimationData = {
 }
 function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number, waitingTime?: number }) {
     const store = useStore();
-    const shells = useMemo(() => store.action.endsWith("init") ? store.shells ?? [] : [], [store.action, store.shells]);
+    const shells = useMemo(() => store.action.endsWith("init") ? [...(store.shells ?? [])] : [], [store.action, store.shells]);
 
     const hand = useRef<RapierRigidBody>(null);
 
@@ -447,6 +498,29 @@ function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number
         hand.current.setTranslation(from, true);
     }, [store.action, store.selectedHole, store]);
 
+    useEffect(() => {
+        if (store.action !== "clean-init") return;
+        if (!store.selectedHole) return;
+        if (!hand.current || !shells) return;
+        if (store.player === -1) return;
+
+        const from = getHolePosition(store.selectedHole.player, store.selectedHole.hole).clone();
+        from.y += HOLE_HEIGHT * 0.5;
+        const stops: Vec3[] = [];
+        for (let i = store.selectedHole.hole; i < HOLE_COUNT; ++i) {
+            let [player, hole] = getNextHole(store.player, store.player, i);
+            const to = getHolePosition(player, hole).clone();
+            to.y += HOLE_HEIGHT * 0.5;
+            stops.push(to);
+        }
+        animationData.current.paths = computePaths(from, stops, HOLE_HEIGHT * 0.5);
+        animationData.current.time = 0;
+        animationData.current.end = getHoleKey(store.player, STORE_INDEX);
+        hand.current.setTranslation(from, true);
+
+        store.player = -1;
+    }, [store.action, store.player, shells, store]);
+
     // Create joints between Hand and shells
     useEffect(() => {
         if (!store.action.endsWith("init")) return;
@@ -454,28 +528,25 @@ function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number
         if (!hand.current || !shells) return;
 
         const created = joints.current;
-        for (const shell of shells) {
+        while (shells.length > 0) {
+            const shell = shells.shift();
+            if (!shell) break;
             created.push(world.createImpulseJoint(joint, hand.current, shell, true));
         }
-
-        // return () => {
-        //     while (created.length) {
-        //         world.removeImpulseJoint(created.pop()!, true);
-        //     }
-        // }
     }, [store.action, store.selectedHole, shells, world, joint]);
 
-    // Speak when taking from hole
     useEffect(() => {
+    // Speak when taking from hole
         if (store.action === "init") {
             store.action = "speak";
         }
-    }, [store.action, store]);
-
-    // Speak when stealing
-    useEffect(() => {
-        if (store.action === "steal-init") {
+        // Speak when stealing
+        else if (store.action === "steal-init") {
             store.action = "speak-steal";
+        }
+        // Start cleaning
+        else if (store.action === "clean-init") {
+            store.action = "clean-move";
         }
     }, [store.action, store]);
 
@@ -530,6 +601,18 @@ function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number
             else if (store.action === "steal-move") {
                 while (joints.current.length) {
                     world.removeImpulseJoint(joints.current.pop()!, true);
+                }
+            } else if (store.action === "clean-move") {
+                // Drop all at end
+                if (animationData.current.paths.length === 0) {
+                    while (joints.current.length) {
+                        world.removeImpulseJoint(joints.current.pop()!, true);
+                    }
+                }
+                else {
+                    // Accumulate shells
+                    store.selectedHole = getHoleKey(...getNextHole(store.selectedHole.player, store.selectedHole.player, store.selectedHole.hole));
+                    store.action = "clean-init";
                 }
             }
 
@@ -642,7 +725,9 @@ function IndicatedHole({ player, hole, transition = 0.25 }: HoleKey & { transiti
                         break;
                     case "confirm":
                         if (!store.selectedHole) {
-                            throw new Error("Trying to confirm before select!");
+                            console.warn("Trying to confirm before select!");
+                            store.action = "select";
+                            break;
                         }
                         if (store.selectedHole.player === player && store.selectedHole.hole === hole) {
                             store.action = "init";
@@ -663,7 +748,7 @@ function Speech() {
     const commands = useMemo(() => store.words.map(word => ({
         command: word.toLowerCase(),
         callback: (command) => {
-            console.log(`Command match: ${command}`);
+            console.log(`Heard word: ${command}`);
             if (command !== store.word?.toLowerCase()) return;
             store.listening = false;
             switch (store.action) {
@@ -693,34 +778,9 @@ function Speech() {
     // Restart if transcript ends before action completion
     useEffect(() => {
         if (!store.word) return;
-
-        // if (hasParam("debug")) {
-        //     store.listening = false;
-        //     switch (store.action) {
-        //         case "speak": store.action = "move"; break;
-        //         case "speak-select": store.action = "select"; break;
-        //         case "speak-steal-init": store.action = "steal-init"; break;
-        //     }
-        //     if (listening) SpeechRecognition.stopListening();
-        //     return;
-        // }
-
         store.listening = listening;
         if (listening) return;
-        // if (!transcript) return;
-        // const regex = new RegExp(`${store.word.replaceAll(/\s/g, "")}`, "i");
-        // if (regex.test(transcript.replaceAll(/\s/g, ""))) {
-        //     switch (store.action) {
-        //         case "speak": store.action = "move"; break;
-        //         case "speak-select": store.action = "select"; break;
-        //         case "speak-steal-init": store.action = "steal-init"; break;
-        //     }
-        //     store.listening = false;
-        //     if (listening) SpeechRecognition.stopListening();
-        // } else {
         SpeechRecognition.startListening({ language: "en-GB" });
-        // }
-        // console.log("tested", listening, transcript);
     }, [store.word, store, listening, transcript]);
 
     // Handle errors (forward to UI)
