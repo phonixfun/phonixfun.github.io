@@ -80,7 +80,7 @@ export function UI() {
             break;
         case "Game": {
             if (store.error) blur = "strong";
-            else if (store.action === "speak") blur = "off";
+            else if (store.action.startsWith("speak")) blur = "off";
         }
     }
 
@@ -204,6 +204,7 @@ function Instruction({ player }: { player: number }) {
     if (store.player === player) {
         turn = i18n.gameplay.yourTurn;
         instruction = i18n.gameplay[store.action];
+        if (!instruction) console.log(store.action);
         if (store.shells) {
             const countable = /\$COUNT\(([^|]+)\|([^)]+)\)/;
             const count = store.shells.length;
@@ -233,7 +234,7 @@ function Word() {
 
     const { transcript } = useSpeechRecognition({ transcribing: true });
 
-    if (store.action !== "speak") return null;
+    if (!store.action.startsWith("speak")) return null;
 
     const classes = [styles.word];
     if (store.player === 1) classes.push(styles.flip);

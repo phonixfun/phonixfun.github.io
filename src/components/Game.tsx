@@ -15,13 +15,14 @@ import useM_Hole from "@materials/M_Hole";
 import { useStore } from "@utils/useStore";
 import { easings } from "react-spring";
 import CameraControlsImpl from "camera-controls";
-import SpeechRecognition, { useSpeechRecognition } from "react-speech-recognition";
+import SpeechRecognition, { SpeechRecognitionOptions, useSpeechRecognition } from "react-speech-recognition";
 import { hasParam } from "@utils/Params";
 
-export type Action = "select" | "confirm" | "init" | "move" | "speak" | "end" | "steal-init" | "steal-move" | "steal-end" | "clean-init" | "clean-move" | "clean-end";
+export type Action = "select" | "confirm" | "init" | "move" | "speak" | "speak-steal" | "speak-select" | "end" | "steal-init" | "steal-move" | "steal-end" | "clean-init" | "clean-move" | "clean-end";
 
 /*
 TODO:
+- Clean phase (empty board)
 - Loading screen during physics warmup
 - Reset shell positions
 - Count stores and display winner
@@ -126,6 +127,20 @@ const getNextHole = (playingPlayer: number, player: number, hole: number): [play
     return [player, hole];
 }
 
+const getPrevHole = (playingPlayer: number, player: number, hole: number): [player: number, hole: number] => {
+    --hole;
+    if (hole < 0) {
+        ++player;
+        player %= PLAYER_COUNT;
+        hole += HOLE_COUNT;
+        // If this player is playing, include the player's store
+        if (playingPlayer === player) {
+            ++hole;
+        }
+    }
+    return [player, hole];
+}
+
 const getOppositeHole = (player: number, hole: number): [player: number, hole: number] => {
     return [
         getNextPlayer(player),
@@ -136,7 +151,7 @@ const getOppositeHole = (player: number, hole: number): [player: number, hole: n
 const computeHolePosition = (holeKey: HoleKey): Vec3 => {
     const { player, hole } = holeKey;
     const pos = new Vec3();
-    pos.x = (hole * HOLE_SIZE - HOLE_SIZE * (HOLE_COUNT - 1) * 0.5) * (player === 0 ? -1 : 1);
+    pos.x = (hole * HOLE_SIZE - HOLE_SIZE * (HOLE_COUNT - 1) * 0.5) * (player === 0 ? 1 : -1);
     pos.y = BOARD_HEIGHT - HOLE_HEIGHT * 0.5;
     pos.z = player * HOLE_SIZE - HOLE_SIZE * (PLAYER_COUNT - 1) * 0.5;
     // Store is centered
@@ -276,9 +291,9 @@ function Shells() {
             store.action = "clean-init";
             return;
         }
-        // 2. If last is in store, take another turn
+        // 2. If last is in store, take another turn after speaking a word
         if (hole === STORE_INDEX) {
-            store.action = "select";
+            store.action = "speak-select";
             return;
         }
         // 3. If last is in non-empty hole: take all from that hole and continue (>1 because we just dropped 1 into the hole)
@@ -288,12 +303,10 @@ function Shells() {
             store.action = "init";
             return;
         }
-        // 4. If last is in empty hole on your side: take all from opposite hole and drop in your store. Then change player
+        // 4. If last is in empty hole on your side: take all from opposite hole after speaking a word. Drop in your store, then change player
         if (player === store.player) {
             store.shells = getHoleShells(...getOppositeHole(player, hole))
             store.action = "steal-init";
-            // store.player = getNextPlayer(store.player);
-            // store.action = "select";
             return;
         }
         // 5. If last is in empty hole on opponent side, change player
@@ -394,7 +407,7 @@ function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number
 
     const joints = useRef<ImpulseJoint[]>([]);
 
-    // Create animation path for Hand body
+    // Create animation path for Hand body, traversing all holes in order for number of shells
     useEffect(() => {
         if (store.action !== "init") return;
         if (!store.selectedHole) return;
@@ -417,6 +430,23 @@ function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number
         hand.current.setTranslation(from, true);
     }, [store.action, store.selectedHole, store.player, shells]);
 
+    // Create animation path for Hand body, from opposite hole to player's store
+    useEffect(() => {
+        if (store.action !== "steal-init") return;
+        if (!store.selectedHole) return;
+        if (!hand.current) return;
+
+        let { player, hole } = store.selectedHole;
+        const from = getHolePosition(...getOppositeHole(player, hole)).clone();
+        from.y += HOLE_HEIGHT * 0.5;
+        const to = getHolePosition(player, STORE_INDEX).clone();
+        to.y += HOLE_HEIGHT * 0.5;
+        animationData.current.paths = computePaths(from, [to], HOLE_HEIGHT * 0.5);
+        animationData.current.time = 0;
+        animationData.current.end = getHoleKey(player, hole);
+        hand.current.setTranslation(from, true);
+    }, [store.action, store.selectedHole, store]);
+
     // Create joints between Hand and shells
     useEffect(() => {
         if (!store.action.endsWith("init")) return;
@@ -435,24 +465,6 @@ function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number
         // }
     }, [store.action, store.selectedHole, shells, world, joint]);
 
-    useEffect(() => {
-        if (store.action !== "steal-init") return;
-        if (!store.selectedHole) return;
-        if (!hand.current) return;
-
-        let { player, hole } = store.selectedHole;
-        const from = getHolePosition(...getOppositeHole(player, hole)).clone();
-        from.y += HOLE_HEIGHT * 0.5;
-        const to = getHolePosition(player, STORE_INDEX).clone();
-        to.y += HOLE_HEIGHT * 0.5;
-        animationData.current.paths = computePaths(from, [to], HOLE_HEIGHT * 0.5);
-        animationData.current.time = 0;
-        animationData.current.end = getHoleKey(player, hole);
-        hand.current.setTranslation(from, true);
-
-        store.action = "steal-move";
-    }, [store.action, store.selectedHole, store]);
-
     // Speak when taking from hole
     useEffect(() => {
         if (store.action === "init") {
@@ -460,9 +472,16 @@ function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number
         }
     }, [store.action, store]);
 
+    // Speak when stealing
+    useEffect(() => {
+        if (store.action === "steal-init") {
+            store.action = "speak-steal";
+        }
+    }, [store.action, store]);
+
     // Pick a random word from the list
     useEffect(() => {
-        if (store.action === "speak") {
+        if (store.action.startsWith("speak")) {
             let next = store.word;
             while (next === store.word) {
                 next = store.words[Math.floor(Math.random() * store.words.length)];
@@ -530,8 +549,14 @@ function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number
                 return;
             }
 
-            // Speak a word when dropping a shell
-            setTimeout(() => store.action = "speak", waitingTime * 1000);
+            // Speak a word when dropping a shell into store
+            let { player: currPlayer, hole: currHole } = animationData.current.end;
+            for (let i = 0; i < animationData.current.paths.length; ++i) {
+                [currPlayer, currHole] = getPrevHole(store.player, currPlayer, currHole);
+            }
+            if (currPlayer === store.player && currHole === STORE_INDEX) {
+                setTimeout(() => store.action = "speak", waitingTime * 1000);
+            }
         }
 
         // Waiting time
@@ -634,43 +659,72 @@ function IndicatedHole({ player, hole, transition = 0.25 }: HoleKey & { transiti
 function Speech() {
     const store = useStore();
 
+    // Build fuzzy commands from loaded word list
+    const commands = useMemo(() => store.words.map(word => ({
+        command: word.toLowerCase(),
+        callback: (command) => {
+            console.log(`Command match: ${command}`);
+            if (command !== store.word?.toLowerCase()) return;
+            store.listening = false;
+            switch (store.action) {
+                case "speak": store.action = "move"; break;
+                case "speak-steal": store.action = "steal-move"; break;
+                case "speak-select": store.action = "select"; break;
+            }
+            SpeechRecognition.stopListening();
+        },
+        isFuzzyMatch: true,
+        fuzzyMatchingThreshold: 0.6,
+    })) as SpeechRecognitionOptions["commands"], [store]);
+
     const { browserSupportsSpeechRecognition, isMicrophoneAvailable, listening, transcript } = useSpeechRecognition({
-        transcribing: true
+        commands, transcribing: true
     });
 
-    useEffect(() => {
-        if (!store.word) return;
-
-        if (hasParam("debug")) {
-            store.listening = false;
-            store.action = "move";
-            if (listening) SpeechRecognition.stopListening();
-            return;
-        }
-        
-        store.listening = listening;
-        if (listening) return;
-        if (!transcript) return;
-        const regex = new RegExp(`${store.word.replaceAll(/\s/g, "")}`, "i");
-        if (regex.test(transcript.replaceAll(/\s/g, ""))) {
-            store.action = "move";
-            store.listening = false;
-            if (listening) SpeechRecognition.stopListening();
-        } else {
-            SpeechRecognition.startListening({ language: "en-GB" });
-        }
-        console.log("tested", listening, transcript);
-    }, [store.word, store, listening, transcript]);
-
+    // Start listening when action is speak
     useEffect(() => {
         if (store.scene !== "Game") return;
         if (store.error !== null) return;
-        if (store.action !== "speak") return;
+        if (!store.action.startsWith("speak")) return;
         SpeechRecognition.startListening({ language: "en-GB" });
         store.listening = true;
     }, [store.scene, store.error, store.action, store]);
 
-    if (store.action === "speak") {
+    // Restart if transcript ends before action completion
+    useEffect(() => {
+        if (!store.word) return;
+
+        // if (hasParam("debug")) {
+        //     store.listening = false;
+        //     switch (store.action) {
+        //         case "speak": store.action = "move"; break;
+        //         case "speak-select": store.action = "select"; break;
+        //         case "speak-steal-init": store.action = "steal-init"; break;
+        //     }
+        //     if (listening) SpeechRecognition.stopListening();
+        //     return;
+        // }
+
+        store.listening = listening;
+        if (listening) return;
+        // if (!transcript) return;
+        // const regex = new RegExp(`${store.word.replaceAll(/\s/g, "")}`, "i");
+        // if (regex.test(transcript.replaceAll(/\s/g, ""))) {
+        //     switch (store.action) {
+        //         case "speak": store.action = "move"; break;
+        //         case "speak-select": store.action = "select"; break;
+        //         case "speak-steal-init": store.action = "steal-init"; break;
+        //     }
+        //     store.listening = false;
+        //     if (listening) SpeechRecognition.stopListening();
+        // } else {
+        SpeechRecognition.startListening({ language: "en-GB" });
+        // }
+        // console.log("tested", listening, transcript);
+    }, [store.word, store, listening, transcript]);
+
+    // Handle errors (forward to UI)
+    if (store.action.startsWith("speak")) {
         if (!browserSupportsSpeechRecognition) {
             store.error = "Unsupported";
         }

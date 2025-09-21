@@ -1,18 +1,19 @@
 {
   "name": "bolckmans-rfq",
   "version": "1.0.0",
-  "private": false,
   "license": "ISC",
   "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.14.0",
     "@react-three/drei": "^9.114.2",
     "@react-three/fiber": "^8.17.9",
     "@react-three/rapier": "^1.5.0",
+    "camera-controls": "^2.9.0",
     "r3f-perf": "^7.2.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-scripts": "5.0.1",
     "react-speech-recognition": "^4.0.1",
-    "react-spring": "^10.0.1",
+    "react-spring": "^10.0.3",
     "react-use-measure": "^2.1.7",
     "three": "^0.174.0",
     "valtio": "2.1.5"
