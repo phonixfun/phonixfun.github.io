@@ -32,7 +32,6 @@ export type Translation = Readonly<{
     unsupported: string;
     microphone: string;
     allowMic: string;
-    speak: string;
     landscape: string;
     themes: Record<Theme, string> & {
         choose: string;
@@ -66,7 +65,6 @@ export const translations: Record<Key, Translation> = {
         unsupported: "This game is not supported in your current browser. Try updating to the latest version or use Google Chrome or Safari.",
         microphone: "Please allow access to your microphone.",
         allowMic: "Allow microphone",
-        speak: "Click here, then say the word",
         landscape: "Please turn the device to landscape",
         themes: {
             choose: "Choose a theme",
@@ -89,7 +87,7 @@ export const translations: Record<Key, Translation> = {
             "oppTurn": "Opponent's turn",
             "wait": "Please wait while your opponent plays.",
             "listen": "🔊",
-            "gameEnd": "Game has ended",
+            "gameEnd": "Game is ending",
             "winner": "Winner",
             "loser": "Loser",
             "winText": "Congratulations, you won! You had $COUNT(shell|shells)!",
