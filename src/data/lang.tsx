@@ -52,54 +52,60 @@ export type Translation = Readonly<{
         winText: string;
         loseText: string;
     };
+    credits: {
+        button: string;
+        developer: string;
+        translator: string;
+        founder: string;
+    }
 }>;
 
 export const translations: Record<Key, Translation> = {
     id: {
         title: "Phonix Fun",
-        play: "Play",
-        start: "Start game",
+        play: "Bermain",
+        start: "Mulai permainan",
         back: "←",
-        playAgain: "Play another round",
-        playAgainNewTheme: "Choose a different theme",
-        unsupported: "This game is not supported in your current browser. Try updating to the latest version or use Google Chrome or Safari.",
-        microphone: "Please allow access to your microphone.",
-        allowMic: "Allow microphone",
-        landscape: "Please turn the device to landscape",
+        playAgain: "Mainkan ronde berikutnya",
+        playAgainNewTheme: "Pilih tema yang berbeda",
+        unsupported: "Game ini tidak didukung di peramban Anda saat ini. Coba perbarui ke versi terbaru atau gunakan Google Chrome atau Safari.",
+        microphone: "Harap izinkan akses ke mikrofon anda.",
+        allowMic: "Izinkan mikrofon",
+        landscape: "Silakan ubah perangkat ke lanskap",
         themes: {
-            choose: "Choose a theme",
-            "1": "one",
-            "2": "two",
-            "3": "three",
-            "4": "four",
-            "5": "five",
+            choose: "Pilih tema",
+            "1": "satu",
+            "2": "dua",
+            "3": "tiga",
+            "4": "empat",
+            "5": "lima",
         },
         modal: {
-            confirm: "Yes",
-            cancel: "No",
+            confirm: "Ya",
+            cancel: "Tidak",
             quit: {
-                title: "Quit",
-                content: <>Are you sure you want to quit the game?</>,
+                title: "Berhenti",
+                content: <>Apakah anda yakin ingin keluar dari permainan?</>,
             }
         },
         gameplay: {
-            "yourTurn": "Your turn",
-            "oppTurn": "Opponent's turn",
-            "wait": "Please wait while your opponent plays.",
+            "yourTurn": "Giliranmu",
+            "oppTurn": "Giliran lawan",
+            "wait": "Harap tunggu sementara lawan Anda bermain.",
             "listen": "🔊",
-            "gameEnd": "Game is ending",
-            "winner": "Winner",
-            "loser": "Loser",
-            "winText": "Congratulations, you won! You had $COUNT(shell|shells)!",
-            "loseText": "You only had $COUNT(shell|shells).",
+            "gameEnd": "Permainan berakhir",
+            "winner": "Menang",
+            "loser": "Kalah",
+            "winText": "Selamat, anda menang! Anda mendapatkan $COUNT(kerang|kerang)!",
+            "loseText": "Anda hanya memiliki $COUNT(kerang|kerang).",
 
-            "select": "Tap on one of your holes.",
-            "confirm": "This hole has $COUNT(shell|shells). Tap on this hole once more to play this move!",
+            "select": "Ketuk salah satu lubang anda.",
+            "confirm": "Lubang ini memiliki $COUNT(shell|shell). Ketuk lubang ini sekali lagi untuk memainkan langkah ini!",
             "init": "",
             "move": "",
-            "speak": "Say the word shown on the board.",
-            "speak-steal": "Say the word shown on the board.",
-            "speak-select": "Say the word shown on the board.",
+            "speak": "Ucapkan kata yang ditunjukkan di papan tulis.",
+            "speak-steal": "Ucapkan kata yang ditunjukkan di papan tulis.",
+            "speak-select": "Ucapkan kata yang ditunjukkan di papan tulis.",
             "end": "",
             "steal-init": "",
             "steal-move": "",
@@ -107,6 +113,12 @@ export const translations: Record<Key, Translation> = {
             "clean-init": "",
             "clean-move": "",
             "clean-end": "",
+        },
+        credits: {
+            "button": "Credits",
+            "developer": "Developer",
+            "translator": "Translator",
+            "founder": "Founder",
         },
     },
 } as const;
