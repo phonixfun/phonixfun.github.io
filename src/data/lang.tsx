@@ -100,7 +100,7 @@ export const translations: Record<Key, Translation> = {
             "loseText": "Anda hanya memiliki $COUNT(kerang|kerang).",
 
             "select": "Ketuk salah satu lubang anda.",
-            "confirm": "Lubang ini memiliki $COUNT(shell|shell). Ketuk lubang ini sekali lagi untuk memainkan langkah ini!",
+            "confirm": "Lubang ini memiliki $COUNT(kerang|kerang). Ketuk lubang ini sekali lagi untuk memainkan langkah ini!",
             "init": "",
             "move": "",
             "speak": "Ucapkan kata yang ditunjukkan di papan tulis.",
