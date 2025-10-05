@@ -215,3 +215,33 @@
     width: 70px;
     font-size: 40px;
 }
+
+.credits {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+}
+
+.credits .button {
+    border: none;
+    width: auto;
+    max-width: unset;
+    width: auto;
+    height: 40px;
+    font-size: 30px;
+}
+
+.credits .button:hover {
+    text-decoration: underline;
+    background-color: transparent;
+}
+
+.creditscreen h3 {
+    font-size: 30px;
+    margin-bottom: 10px;
+    margin-top: 60px;
+}
+
+.creditscreen span {
+    font-size: 20px;
+}

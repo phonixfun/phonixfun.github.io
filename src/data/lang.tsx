@@ -25,6 +25,7 @@ export const languages: Record<Key, Props> = {
 export type Translation = Readonly<{
     title: string;
     play: string;
+    tutorial: string;
     start: string;
     back: string;
     playAgain: string;
@@ -64,6 +65,7 @@ export const translations: Record<Key, Translation> = {
     id: {
         title: "Phonix Fun",
         play: "Bermain",
+        tutorial: "Cara bermain",
         start: "Mulai permainan",
         back: "←",
         playAgain: "Mainkan ronde berikutnya",

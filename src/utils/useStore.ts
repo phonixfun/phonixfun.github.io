@@ -9,7 +9,9 @@ export type Scenes =
     "ChooseTheme" |
     "ToLandscape" |
     "Game" |
-    "NewGame";
+    "NewGame" | 
+    "Tutorial" |
+    "Credits";
 
 export type Errors =
     "Unsupported" |

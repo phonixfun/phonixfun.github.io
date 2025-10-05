@@ -58,6 +58,8 @@ export function UI() {
     let ActiveUI: () => ReactNode = () => null;
     switch (store.scene) {
         case "MainMenu": ActiveUI = MainMenu; break;
+        case "Tutorial": ActiveUI = Tutorial; break;
+        case "Credits": ActiveUI = Credits; break;
         case "ChooseTheme": ActiveUI = ThemeMenu; break;
         case "ToLandscape": ActiveUI = PromptLandscape; break;
         case "Game": {
@@ -73,6 +75,8 @@ export function UI() {
     let blur: "off" | "on" | "strong" = "off";
     switch (store.scene) {
         case "MainMenu":
+        case "Tutorial":
+        case "Credits":
         case "ChooseTheme":
         case "ToLandscape":
             blur = "strong";
@@ -99,9 +103,36 @@ function MainMenu() {
     return (<>
         <div className={styles.menu}>
             <h3>{i18n.title}</h3>
-            <div className={styles.buttons}>
+            <div className={styles.buttons} style={{ flexDirection: "column" }}>
                 <Button label={i18n.play} onClick={() => { store.scene = "ChooseTheme"; SpeechRecognition.startListening(); }} />
+                <Button label={i18n.tutorial} onClick={() => { store.scene = "Tutorial"; }} />
             </div>
+            <div className={styles.credits}>
+                <Button label={i18n.credits.button} onClick={() => { store.scene = "Credits"; }} />
+            </div>
+        </div>
+    </>);
+}
+
+function Tutorial() {
+    return (<>
+        <div className={[styles.menu, styles.tutorial].join(" ")}>
+            <BackButton />
+        </div>
+    </>);
+}
+
+function Credits() {
+    const { lang: { translation: i18n } } = useContext(LangContext);
+    return (<>
+        <div className={[styles.menu, styles.creditscreen].join(" ")}>
+            <h3>{i18n.credits.founder}</h3>
+            <span>Depi Prihamdani</span>
+            <h3>{i18n.credits.developer}</h3>
+            <span>Kronoxis</span>
+            <h3>{i18n.credits.translator}</h3>
+            <span>Lynns</span>
+            <BackButton />
         </div>
     </>);
 }
