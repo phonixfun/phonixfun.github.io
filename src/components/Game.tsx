@@ -18,7 +18,7 @@ import CameraControlsImpl from "camera-controls";
 import SpeechRecognition, { SpeechRecognitionOptions, useSpeechRecognition } from "react-speech-recognition";
 import { hasParam } from "@utils/Params";
 
-export type Action = "select" | "confirm" | "init" | "move" | "speak" | "speak-steal" | "speak-select" | "end" | "steal-init" | "steal-move" | "steal-end" | "clean-init" | "clean-move" | "clean-end";
+export type Action = "select" | "confirm" | "rechoose" | "init" | "move" | "speak" | "speak-steal" | "speak-select" | "end" | "steal-init" | "steal-move" | "steal-end" | "clean-init" | "clean-move" | "clean-end";
 
 /*
 TODO:
@@ -289,6 +289,17 @@ function Shells() {
         store.shells = shells;
     }, [store.selectedHole, getHoleShells, store]);
 
+    useEffect(() => {
+        console.log(store.action);
+        if (!store.selectedHole) return;
+        if (store.action !== "confirm") return;
+        const { player, hole } = store.selectedHole;
+        const shells = getHoleShells(player, hole);
+        if (shells.length === 0) {
+            store.action = "rechoose";
+        }
+    }, [store.selectedHole, store.action, store, getHoleShells]);
+
     const [, update] = useState({});
     useEffect(() => {
         if (!store.initialized) {
@@ -306,8 +317,8 @@ function Shells() {
         }
         if (store.action === "clean-end") {
             store.result = [
-                getHoleShells(0, STORE_INDEX).length, 
-                getHoleShells(1, STORE_INDEX).length 
+                getHoleShells(0, STORE_INDEX).length,
+                getHoleShells(1, STORE_INDEX).length
             ];
             return;
         }
@@ -536,7 +547,7 @@ function Hand({ animationTime = 1, waitingTime = 0.2 }: { animationTime?: number
     }, [store.action, store.selectedHole, shells, world, joint]);
 
     useEffect(() => {
-    // Speak when taking from hole
+        // Speak when taking from hole
         if (store.action === "init") {
             store.action = "speak";
         }
@@ -718,6 +729,7 @@ function IndicatedHole({ player, hole, transition = 0.25 }: HoleKey & { transiti
             onPointerUp={e => {
                 switch (store.action) {
                     case "select":
+                    case "rechoose":
                         if (store.player === player) {
                             store.selectedHole = store.hoveredHole;
                             store.action = "confirm";

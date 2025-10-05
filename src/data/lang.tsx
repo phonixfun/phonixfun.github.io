@@ -101,6 +101,7 @@ export const translations: Record<Key, Translation> = {
 
             "select": "Ketuk salah satu lubang anda.",
             "confirm": "Lubang ini memiliki $COUNT(kerang|kerang). Ketuk lubang ini sekali lagi untuk memainkan langkah ini!",
+            "rechoose": "Lubang ini kosong. Pilih yang lain.",
             "init": "",
             "move": "",
             "speak": "Ucapkan kata yang ditunjukkan di papan tulis.",
