@@ -326,11 +326,7 @@ function Shells() {
 
     useEffect(() => {
         if (!store.action.endsWith("end")) return;
-        if (store.action === "steal-end") {
-            store.player = getNextPlayer(store.player);
-            store.action = "select";
-            return;
-        }
+        
         if (store.action === "clean-end") {
             store.result = [
                 getHoleShells(0, STORE_INDEX).length,
@@ -369,6 +365,14 @@ function Shells() {
             store.shells = shells;
             return;
         }
+
+        // After steal action, change player (but only if the game didn't end!)
+        if (store.action === "steal-end") {
+            store.player = getNextPlayer(store.player);
+            store.action = "select";
+            return;
+        }
+
         // 2. If last is in store, take another turn after speaking a word
         if (hole === STORE_INDEX) {
             store.action = "speak-select";
