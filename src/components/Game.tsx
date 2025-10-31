@@ -387,8 +387,9 @@ function Shells() {
         }
         // 4. If last is in empty hole on your side: take all from opposite hole after speaking a word. Drop in your store, then change player
         if (player === store.player) {
-            store.shells = getHoleShells(...getOppositeHole(player, hole))
-            store.action = "steal-init";
+            store.shells = getHoleShells(...getOppositeHole(player, hole));
+            if (store.shells.length === 0) store.action = "steal-end";
+            else store.action = "steal-init";
             return;
         }
         // 5. If last is in empty hole on opponent side, change player
