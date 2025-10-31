@@ -326,7 +326,7 @@ function Shells() {
 
     useEffect(() => {
         if (!store.action.endsWith("end")) return;
-        
+
         if (store.action === "clean-end") {
             store.result = [
                 getHoleShells(0, STORE_INDEX).length,
@@ -815,6 +815,17 @@ function Speech() {
         if (listening) return;
         SpeechRecognition.startListening({ language: "en-GB" });
     }, [store.word, store, listening, transcript]);
+
+    useEffect(() => {
+        if (!hasParam("dev") || !store.listening) return;
+        store.listening = false;
+        switch (store.action) {
+            case "speak": store.action = "move"; break;
+            case "speak-steal": store.action = "steal-move"; break;
+            case "speak-select": store.action = "select"; break;
+        }
+        SpeechRecognition.stopListening();
+    }, [store.listening, store]);
 
     // Handle errors (forward to UI)
     if (store.action.startsWith("speak")) {
