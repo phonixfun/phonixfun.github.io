@@ -87,8 +87,24 @@ function Controls() {
         }
     }, [store.scene]);
 
+    if (hasParam("debug")) {
+        return (<CameraControls ref={controls} />);
+    }
+
     return (
-        <CameraControls ref={controls} />
+        <CameraControls ref={controls}
+            mouseButtons={{
+                left: CameraControlsImpl.ACTION.NONE,
+                middle: CameraControlsImpl.ACTION.NONE,
+                right: CameraControlsImpl.ACTION.NONE,
+                wheel: CameraControlsImpl.ACTION.NONE
+            }}
+            touches={{
+                one: CameraControlsImpl.ACTION.NONE,
+                two: CameraControlsImpl.ACTION.NONE,
+                three: CameraControlsImpl.ACTION.NONE,
+            }}
+        />
     );
 }
 
